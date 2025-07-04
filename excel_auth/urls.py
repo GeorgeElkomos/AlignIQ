@@ -28,9 +28,12 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('project_excel_comparison.urls')),
     path('', TemplateView.as_view(template_name='index.html'), name='login'),
+    path('login/', TemplateView.as_view(template_name='index.html'), name='login-page'),
     path('dashboard/', TemplateView.as_view(template_name='dashboard.html'), name='dashboard'),
     # Add this line for the database comparison history page
     path('database-comparison-history/', TemplateView.as_view(template_name='database_comparison_history.html'), name='database-comparison-history'),
+    # Add CSV Splitter page
+    path('csv-splitter/', TemplateView.as_view(template_name='csv_splitter.html'), name='csv-splitter'),
     # Path to serve any template
     path('template/<str:template_name>/', serve_template, name='serve_template'),
 ]

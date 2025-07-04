@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-trv3#2t*8ypd+ogn-^k#&q#%)8@iq*4g(pjq6exs)m$=frl&!@
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'https://lightidea.org:8002/', 'localhost']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 
 # Application definition

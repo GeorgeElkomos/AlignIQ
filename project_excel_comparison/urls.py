@@ -11,7 +11,7 @@ from .views.file_views import UploadFileView, ListUserFilesView, ListAllFilesAdm
 from .views.comparison_views import (
     AddComparisonView, DeleteComparisonView, ListUserComparisonView, 
     ListAllComparisonView, ComparisonDetailView, DownloadComparisonExcelView,
-    AnalyzeExcelTableView
+    AnalyzeExcelTableView,MakeCompareView,AddComparisonView
 )
 
 # Database views
@@ -22,14 +22,14 @@ from .views.database_views import (
     TestDatabaseConnectionByIdView, GetAvailableSchemasView, 
     GetSchemaTablesView, GetTableColumnsView, CompareDatabaseTablesView,
     ListUserDatabaseComparisonsView, DeleteDatabaseComparisonView, 
-    GetDatabaseComparisonView
+    GetDatabaseComparisonView,
 )
 
 # Admin views
 from .views.admin_views import ListUsersView, UpdateUserPermissionView
 
 # Utility views
-from .views.utility_views import GetSheetNamesView, GetFileHeaderView, dashboard_analytics
+from .views.utility_views import GetSheetNamesView, GetFileHeaderView, dashboard_analytics, split_Lcsvs_View, CSVDownloadView, CSVZipDownloadView
 
 urlpatterns = [
     # Authentication endpoints
@@ -84,8 +84,13 @@ urlpatterns = [
     # Utility endpoints
     path('files/<int:file_id>/sheets/', GetSheetNamesView.as_view(), name='get-sheet-names'),
     path('files/<int:file_id>/headers/', GetFileHeaderView.as_view(), name='get-file-header'),
+    path('files/<int:file_id>/split-csv/', split_Lcsvs_View.as_view(), name='split-csv'),
+    path('split-csv/', split_Lcsvs_View.as_view(), name='split-csv-upload'),
+    path('download-csv/<str:file_path>/', CSVDownloadView.as_view(), name='download-csv'),
+    path('download-csv-zip/', CSVZipDownloadView.as_view(), name='download-csv-zip'),
     path('dashboard/analytics/', dashboard_analytics, name='dashboard-analytics'),
     
     # Template endpoints
     path('database-comparison-history/', TemplateView.as_view(template_name='database_comparison_history.html'), name='database-comparison-history'),
+    path('csv-splitter/', TemplateView.as_view(template_name='csv_splitter.html'), name='csv-splitter'),
 ]

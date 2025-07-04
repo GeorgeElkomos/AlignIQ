@@ -13,12 +13,113 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
-
 from ..models import FileUpload, Comparison
 from ..serializers import ComparisonSerializer
 from ..permissions import IsAdmin
 from ..funtions import compare_excel_sheets, preprocess_results
 from ..encryption import decrypt_file
+from ..funtions import open_file
+
+
+
+
+
+
+
+
+
+
+
+
+def find_formatted_table_boundaries(worksheet, start_cell="A1"):
+    """
+    Find the boundaries of a formatted table (not Excel Table object) by detecting 
+    where data starts and ends based on cell content patterns.
+    """
+    from openpyxl.utils.cell import coordinate_from_string, column_index_from_string, get_column_letter
+    
+    # Parse start cell
+    col_letter, row_num = coordinate_from_string(start_cell)
+    start_col = column_index_from_string(col_letter)
+    start_row = row_num
+    
+    # First, find where the actual table data starts by looking for headers
+    table_start_row = start_row
+    table_start_col = start_col
+    
+    # Look for the first row that has multiple non-empty cells (likely headers)
+    for row in range(start_row, min(start_row + 20, worksheet.max_row + 1)):
+        non_empty_count = 0
+        first_col_with_data = None
+        
+        # Check first 10 columns for data
+        for col in range(start_col, min(start_col + 10, worksheet.max_column + 1)):
+            cell_value = worksheet.cell(row=row, column=col).value
+            if cell_value is not None and str(cell_value).strip():
+                non_empty_count += 1
+                if first_col_with_data is None:
+                    first_col_with_data = col
+        
+        # If we find a row with multiple data cells, this is likely our table start
+        if non_empty_count >= 2:
+            table_start_row = row
+            table_start_col = first_col_with_data
+            break
+    
+    # Find the last row with data
+    last_row = table_start_row
+    consecutive_empty_rows = 0
+    
+    for row in range(table_start_row + 1, worksheet.max_row + 1):
+        row_has_data = False
+        
+        # Check if any cell in this row has data
+        for col in range(table_start_col, min(table_start_col + 10, worksheet.max_column + 1)):
+            cell_value = worksheet.cell(row=row, column=col).value
+            if cell_value is not None and str(cell_value).strip():
+                row_has_data = True
+                break
+        
+        if row_has_data:
+            last_row = row
+            consecutive_empty_rows = 0
+        else:
+            consecutive_empty_rows += 1
+            # If we hit 3 consecutive empty rows, we've likely reached the end
+            if consecutive_empty_rows >= 3:
+                break
+    
+    # Find the last column with data
+    last_col = table_start_col
+    consecutive_empty_cols = 0
+    
+    for col in range(table_start_col, worksheet.max_column + 1):
+        col_has_data = False
+        
+        # Check if any cell in this column has data
+        for row in range(table_start_row, min(last_row + 1, table_start_row + 100)):
+            cell_value = worksheet.cell(row=row, column=col).value
+            if cell_value is not None and str(cell_value).strip():
+                col_has_data = True
+                break
+        
+        if col_has_data:
+            last_col = col
+            consecutive_empty_cols = 0
+        else:
+            consecutive_empty_cols += 1
+            # If we hit 2 consecutive empty columns, we've likely reached the end
+            if consecutive_empty_cols >= 2:
+                break
+    
+    # Convert back to Excel notation
+    start_cell_final = f"{get_column_letter(table_start_col)}{table_start_row}"
+    end_cell = f"{get_column_letter(last_col)}{last_row}"
+    
+    return f"{start_cell_final}:{end_cell}", table_start_row, last_row, table_start_col, last_col
+
+
+
 
 
 class AddComparisonView(APIView):
@@ -667,3 +768,246 @@ class AnalyzeExcelTableView(APIView):
                 'message': f'Error: {str(e)}',
                 'status': 'error'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class MakeCompareView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, file1_id, file2_id):
+        sheet1 = request.data.get("sheet1")
+        sheet2 = request.data.get("sheet2")
+        range1 = request.data.get("range1", "A7:F99")
+        range2 = request.data.get("range2", "A7:F99")
+        primary_columns1 = request.data.get("column1")
+        primary_columns2 = request.data.get("column2")
+
+        if not file1_id or not file2_id:
+            return Response(
+                {"error": "file1, file2, and results are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        if primary_columns1 != primary_columns2:
+            return Response(
+                {"error": "primary key in file 1 not equal file2 primary key"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        try:
+            file1 = FileUpload.objects.get(id=file1_id, user=request.user)
+            file2 = FileUpload.objects.get(id=file2_id, user=request.user)
+
+            if file1.id == file2.id:
+                return Response(
+                    {"error": "file1 and file2 must be different files."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            primary_columns = None
+            if primary_columns1 and primary_columns2:
+                primary_columns = [primary_columns1, primary_columns2]
+           
+            # Decrypt files
+            decrypted_file1 = decrypt_file(file1.file.path)
+            decrypted_file2 = decrypt_file(file2.file.path)
+        except Exception as e:
+            return Response(
+                {"error": f"Error decrypting files: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+            # Use load_workbook instead of open_file
+        try:
+                # Load workbooks with openpyxl
+                if isinstance(decrypted_file1, str) and os.path.exists(decrypted_file1):
+                    workbook1 = load_workbook(decrypted_file1, data_only=True)
+                else:
+                    workbook1 = load_workbook(io.BytesIO(decrypted_file1), data_only=True)
+                
+                if isinstance(decrypted_file2, str) and os.path.exists(decrypted_file2):
+                    workbook2 = load_workbook(decrypted_file2, data_only=True)
+                else:
+                    workbook2 = load_workbook(io.BytesIO(decrypted_file2), data_only=True)
+
+                # Get worksheets
+                if sheet1:
+                    worksheet1 = workbook1[sheet1]
+                else:
+                    worksheet1 = workbook1.active
+
+                if sheet2:
+                    worksheet2 = workbook2[sheet2]
+                else:
+                    worksheet2 = workbook2.active
+
+                print(f"Range1: {range1}")
+                print(f"Range2: {range2}")
+
+                # Extract data from range1 (e.g., "A6:C31")
+                print("\n=== ITERATING THROUGH RANGE1 ===")
+                print(f"File1 - Range: {range1}")
+                
+                range1_data = []
+                row_count = 0
+                for row in worksheet1[range1]:
+                    row_values = [cell.value for cell in row]
+                    range1_data.append(row_values)
+                    
+                    # Print each row
+                    print(f"Row {row_count + 1}: {row_values}")
+                    
+                    # Print each cell in the row with column info
+                    for col_index, cell_value in enumerate(row_values):
+                        col_letter = chr(ord('A') + col_index)  # Convert to A, B, C, etc.
+                        print(f"  Column {col_letter}: {cell_value}")
+                    
+                    print("-" * 40)
+                    row_count += 1
+
+                # Extract data from range2 (e.g., "A6:C31")
+                print("\n=== ITERATING THROUGH RANGE2 ===")
+                print(f"File2 - Range: {range2}")
+                
+                range2_data = []
+                row_count = 0
+                for row in worksheet2[range2]:
+                    row_values = [cell.value for cell in row]
+                    range2_data.append(row_values)
+                    
+                    # Print each row
+                    print(f"Row {row_count + 1}: {row_values}")
+                    
+                    # Print each cell in the row with column info
+                    for col_index, cell_value in enumerate(row_values):
+                        col_letter = chr(ord('A') + col_index)  # Convert to A, B, C, etc.
+                        print(f"  Column {col_letter}: {cell_value}")
+                    
+                    print("-" * 40)
+                    row_count += 1
+                
+                # Convert to DataFrames
+                df1 = pd.DataFrame(range1_data)
+                df2 = pd.DataFrame(range2_data)
+
+                print(f"DataFrame1 shape: {df1.shape}")
+                print(f"DataFrame2 shape: {df2.shape}")
+                
+                # Display first few rows of raw data for debugging
+                print("First 5 rows of df1 (raw data):")
+                print(df1.head())
+                
+                # Set headers and process data
+                if not df1.empty and len(df1) > 0:
+                    # Use first row as headers
+                    df1.columns = df1.iloc[0]
+                    df1 = df1.drop(df1.index[0])
+                    df1.reset_index(drop=True, inplace=True)
+                    
+                    # Clean column names (remove None values)
+                    df1.columns = [str(col) if col is not None else f"Column_{i}" for i, col in enumerate(df1.columns)]
+                    
+                    print("DataFrame 1 Headers:", df1.columns.tolist())
+                    print(f"DataFrame 1 data rows: {len(df1)}")
+                    
+                    # Print first few rows with data
+                    print("First 3 data rows from df1:")
+                    for index, row in df1.head(3).iterrows():
+                        print(f"Row {index}:")
+                        for column in df1.columns:
+                            if pd.notna(row[column]) and str(row[column]).strip():
+                                print(f"  {column}: {row[column]}")
+                        print("-" * 40)
+
+                if not df2.empty and len(df2) > 0:
+                    # Use first row as headers
+                    df2.columns = df2.iloc[0]
+                    df2 = df2.drop(df2.index[0])
+                    df2.reset_index(drop=True, inplace=True)
+                    
+                    # Clean column names
+                    df2.columns = [str(col) if col is not None else f"Column_{i}" for i, col in enumerate(df2.columns)]
+                    
+                    print("DataFrame 2 Headers:", df2.columns.tolist())
+                    print(f"DataFrame 2 data rows: {len(df2)}")
+
+        except Exception as workbook_error:
+                return Response(
+                    {"error": f"Error loading Excel files: {str(workbook_error)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

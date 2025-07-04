@@ -439,6 +439,7 @@ def compare_excel_sheets(
             file1_this_id = df1[df1_processed == id]
             file2_this_id = df2[df2_processed == id]
             
+            # get added rows
             if file1_this_id.empty and not file2_this_id.empty:
                 added_rows = file2_this_id.to_dict(orient="records")
                 for row in added_rows:
@@ -447,6 +448,7 @@ def compare_excel_sheets(
                         continue
                     result["rows_added"].append(original_row)
                 continue
+            # get removed rows
                 
             if file2_this_id.empty and not file1_this_id.empty:
                 removed_rows = file1_this_id.to_dict(orient="records")
